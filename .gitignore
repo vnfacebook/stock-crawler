@@ -17,3 +17,7 @@ logs/*
 .vscode/
 .idea/
 *.db
+
+# Credentials & Keys
+credentials.json
+*.json

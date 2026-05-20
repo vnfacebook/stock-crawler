@@ -210,12 +210,36 @@ LOG_FILE=logs/crawler.log
 - **Vấn đề:** Vòng lặp 1.535 mã liên tục mở/đóng file CSV và gọi API để gửi từng dòng lên BigQuery gây rớt hiệu năng trầm trọng.
 - **Giải pháp:** Implement **Batching Logic**. Tạo các mảng tạm (`history_batch`, `finance_batch`). Gom đủ 50 mã rồi mới gọi hàm `writer.save()` để xả dữ liệu 1 lần.
 
+### 10. Xung đột môi trường Python 3.14 toàn cục (Global Environment)
+- **Vấn đề:** Khi chạy bằng lệnh `python` mặc định của hệ thống, hệ thống sử dụng Python 3.14 (bản thử nghiệm toàn cục) gây lỗi xung đột C-API của Numpy (`OverflowError` khi khởi tạo `float128`) và thiếu hụt các thư viện Google Cloud BigQuery.
+- **Giải pháp:** Luôn sử dụng môi trường ảo ổn định đã tạo sẵn tại thư mục `venv` dùng phiên bản **Python 3.11.9**. Chỉ chạy các tập lệnh thông qua đường dẫn môi trường ảo: `.\venv\Scripts\python.exe`.
+
+### 11. Lỗi JSON Serialization khi tải dữ liệu Pandas/Numpy lên BigQuery
+- **Vấn đề:** Lỗi `Object of type Timestamp is not JSON serializable` hoặc lỗi không thể tuần tự hóa đối tượng Numpy (như `float64`, `int64`, `NaN`, `NaT`) khi gửi dữ liệu thông qua `load_table_from_json` trong thư viện BigQuery Client.
+- **Giải pháp:** Bổ sung phương thức `_sanitize_data` đệ quy trong `BigQueryWriter` để làm sạch và chuyển hóa toàn bộ kiểu dữ liệu đặc thù của Pandas/Numpy về kiểu dữ liệu cơ bản của Python (như chuyển `Timestamp`/`datetime` thành chuỗi, `NaN`/`NaT` thành `None`, số thực/nguyên Numpy về standard python float/int).
+
+### 12. Lỗi cấu trúc bảng không khớp BigQuery (`400 Provided Schema does not match`)
+- **Vấn đề:** Khi cấu trúc bảng trên BigQuery đã được tạo trước bằng một schema hạn chế (ví dụ dữ liệu test chỉ có 5 cột), việc đẩy dữ liệu chính thức có nhiều cột hơn (như cột `roa`, `roe`, `pb`...) sẽ bị BigQuery từ chối.
+- **Giải pháp:** Cấu hình `LoadJobConfig` trong `BigQueryWriter` sử dụng tùy chọn `schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION]` để BigQuery tự động phát hiện và bổ sung cột mới một cách linh hoạt khi schema thay đổi.
+
 ---
 
 ## Hướng dẫn tiếp tục dự án
-1. Môi trường: Python 3.11 (venv).
-2. Dữ liệu: Các file mẫu (FPT, VNM) đã được crawl chuẩn tại `data/processed/`.
-3. Chạy lệnh: `python scripts/crawl_full_market.py` để bắt đầu thu thập dữ liệu cho toàn bộ thị trường.
+1. **Môi trường hoạt động:** Sử dụng môi trường ảo Python 3.11.9 tại dự án. 
+   * **LƯU Ý QUAN TRỌNG:** Tránh chạy lệnh `python` mặc định của hệ thống vì nó đang trỏ đến bản thử nghiệm lỗi Python 3.14. Luôn gọi trực tiếp qua môi trường ảo: `.\venv\Scripts\python.exe`.
+2. **Dữ liệu mẫu:** Các file mẫu (FPT, VNM) đã được crawl chuẩn tại `data/processed/`.
+3. **Chạy test dọn dẹp các bảng BigQuery cũ (nếu muốn làm sạch schema):**
+   ```powershell
+   .\venv\Scripts\python.exe scripts/clear_tables.py
+   ```
+4. **Chạy test crawl dữ liệu thực tế và tải lên BigQuery (Mẫu 3 mã):**
+   ```powershell
+   .\venv\Scripts\python.exe scripts/test_real_bq.py
+   ```
+5. **Kích hoạt trình lập lịch scheduler chạy định kỳ:**
+   ```powershell
+   .\venv\Scripts\python.exe scripts/run_scheduler.py
+   ```
 
 
 

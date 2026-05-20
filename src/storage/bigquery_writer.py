@@ -1,5 +1,8 @@
 import os
 import pandas as pd
+import numpy as np
+import datetime
+from typing import Any
 from google.cloud import bigquery
 from src.utils.logger import logger
 
@@ -31,6 +34,24 @@ class BigQueryWriter:
             self.client.create_dataset(dataset, timeout=30)
             logger.info(f"Created dataset {self.dataset_id}")
 
+    def _sanitize_data(self, data: Any) -> Any:
+        if isinstance(data, list):
+            return [self._sanitize_data(x) for x in data]
+        elif isinstance(data, dict):
+            return {k: self._sanitize_data(v) for k, v in data.items()}
+        elif isinstance(data, pd.Timestamp):
+            return data.strftime("%Y-%m-%d %H:%M:%S")
+        elif isinstance(data, (datetime.datetime, datetime.date)):
+            return data.strftime("%Y-%m-%d %H:%M:%S") if isinstance(data, datetime.datetime) else data.strftime("%Y-%m-%d")
+        elif pd.isna(data):
+            return None
+        elif isinstance(data, (np.integer, np.floating)):
+            return data.item()
+        elif isinstance(data, np.ndarray):
+            return [self._sanitize_data(x) for x in data]
+        else:
+            return data
+
     def save(self, data: list | dict | pd.DataFrame, table_name: str):
         """
         Lưu danh sách dict, dict đơn lẻ, hoặc DataFrame vào bảng BigQuery.
@@ -42,28 +63,30 @@ class BigQueryWriter:
         if not data:
             return
 
-        # Chuyển đổi sang DataFrame nếu cần
-        if isinstance(data, pd.DataFrame):
-            df = data
-        elif isinstance(data, dict):
-            df = pd.DataFrame([data])
-        else:
-            df = pd.DataFrame(data)
-
-        if df.empty:
-            return
-
         table_id = f"{self.client.project}.{self.dataset_id}.{table_name}"
 
-        # Cấu hình Load Job: Tự động tạo bảng nếu chưa có, thêm dữ liệu nếu đã có
+        # Cấu hình Load Job: Tự động tạo bảng nếu chưa có, thêm dữ liệu nếu đã có, cho phép thêm cột mới
         job_config = bigquery.LoadJobConfig(
             write_disposition="WRITE_APPEND",
             autodetect=True,
+            schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
         )
 
         try:
-            job = self.client.load_table_from_dataframe(df, table_id, job_config=job_config)
-            job.result()  # Đợi job hoàn thành
-            logger.info(f"Loaded {len(df)} rows to BigQuery table {table_id}")
+            if isinstance(data, pd.DataFrame):
+                if data.empty: return
+                job = self.client.load_table_from_dataframe(data, table_id, job_config=job_config)
+                job.result()
+                logger.info(f"Loaded {len(data)} rows from DataFrame to BigQuery table {table_id}")
+            else:
+                data_list = [data] if isinstance(data, dict) else data
+                if not data_list: return
+                
+                # Sanitize data for clean JSON serialization
+                sanitized_list = self._sanitize_data(data_list)
+                
+                job = self.client.load_table_from_json(sanitized_list, table_id, job_config=job_config)
+                job.result()
+                logger.info(f"Loaded {len(sanitized_list)} JSON rows to BigQuery table {table_id}")
         except Exception as e:
             logger.error(f"Failed to load data to BigQuery table {table_id}: {e}")
