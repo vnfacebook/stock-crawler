@@ -1,0 +1,6 @@
+pytest
+pytest-asyncio
+playwright
+black
+flake8
+mypy

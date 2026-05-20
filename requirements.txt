@@ -1,0 +1,11 @@
+httpx
+pandas
+numpy
+loguru
+tenacity
+python-dotenv
+pydantic-settings
+SQLAlchemy
+google-cloud-bigquery
+pandas-gbq
+apscheduler
