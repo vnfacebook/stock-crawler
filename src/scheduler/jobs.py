@@ -4,6 +4,11 @@ from src.utils.logger import logger
 import datetime
 import os
 
+def get_current_time():
+    """Trả về thời gian hiện tại. Hỗ trợ mock dễ dàng khi làm unit test."""
+    return datetime.datetime.now()
+
+
 def get_last_successful_date():
     tracker_file = "data/processed/last_crawl_date.txt"
     if os.path.exists(tracker_file):
@@ -37,7 +42,16 @@ def job_daily_crawl():
     """
     logger.info("--- STARTING JOB: Daily Crawl ---")
     try:
-        today_str = datetime.date.today().strftime("%Y-%m-%d")
+        now = get_current_time()
+        market_close_time = datetime.time(15, 30)
+        
+        # Xác định ngày tối đa có thể crawl (nếu trước 15:30 thì chỉ crawl đến ngày hôm trước)
+        if now.time() >= market_close_time:
+            max_crawlable_date = now.date()
+        else:
+            max_crawlable_date = now.date() - datetime.timedelta(days=1)
+            
+        target_end_date_str = max_crawlable_date.strftime("%Y-%m-%d")
         last_date = get_last_successful_date()
         
         if last_date:
@@ -45,23 +59,23 @@ def job_daily_crawl():
             last_date_obj = datetime.datetime.strptime(last_date, "%Y-%m-%d").date()
             start_date_obj = last_date_obj + datetime.timedelta(days=1)
             
-            # Nếu ngày bắt đầu > ngày hôm nay thì tức là đã chạy rồi
-            if start_date_obj > datetime.date.today():
-                logger.info(f"Data is already up to date (last run: {last_date}). Skipping.")
+            # Nếu ngày bắt đầu vượt quá ngày tối đa có thể crawl thì tức là đã cập nhật rồi
+            if start_date_obj > max_crawlable_date:
+                logger.info(f"Data is already up to date (last run: {last_date}, max crawlable: {target_end_date_str}). Skipping.")
                 return
                 
             start_date = start_date_obj.strftime("%Y-%m-%d")
         else:
-            # Lần đầu tiên chạy tự động, lấy đúng hôm nay
-            start_date = today_str
+            # Lần đầu tiên chạy tự động, lấy ngày tối đa có thể crawl
+            start_date = target_end_date_str
 
-        logger.info(f"Target Date Range: {start_date} to {today_str}")
+        logger.info(f"Target Date Range: {start_date} to {target_end_date_str}")
         
         # Chạy crawl
-        crawl_full_market(start_date=start_date, end_date=today_str)
+        crawl_full_market(start_date=start_date, end_date=target_end_date_str)
         
         # Lưu lại mốc thời gian thành công
-        set_last_successful_date(today_str)
+        set_last_successful_date(target_end_date_str)
         
         logger.info("--- FINISHED JOB: Daily Crawl ---")
     except Exception as e:

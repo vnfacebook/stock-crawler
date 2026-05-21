@@ -24,10 +24,10 @@ def main():
         replace_existing=True
     )
 
-    # 2. Crawl Data Hàng Ngày (Thứ 2 đến Thứ 6 lúc 18:00)
+    # 2. Crawl Data Hàng Ngày (Thứ 2 đến Thứ 6 lúc 15:30)
     scheduler.add_job(
         job_daily_crawl,
-        trigger=CronTrigger(day_of_week='mon-fri', hour=18, minute=0),
+        trigger=CronTrigger(day_of_week='mon-fri', hour=15, minute=30),
         id='daily_market_crawl',
         name='Daily market data crawling',
         replace_existing=True
@@ -36,7 +36,18 @@ def main():
     # In danh sách các công việc đã lên lịch
     logger.info("Scheduled Jobs:")
     for job in scheduler.get_jobs():
-        logger.info(f" - {job.name}: Next run at {job.next_run_time}")
+        try:
+            next_run = job.next_run_time
+        except AttributeError:
+            next_run = "Pending startup (Asia/Ho_Chi_Minh)"
+        logger.info(f" - {job.name}: Next run at {next_run}")
+
+    # 3. Chạy kiểm tra và crawl bù ngay lập tức khi khởi động trình scheduler (nếu có ngày bị lỡ)
+    logger.info("Running initial startup backfill check...")
+    try:
+        job_daily_crawl()
+    except Exception as e:
+        logger.error(f"Failed to run initial startup backfill check: {e}")
 
     # Chạy vòng lặp vô hạn
     try:

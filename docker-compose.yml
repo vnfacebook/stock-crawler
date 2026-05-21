@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  stock-crawler:
+    build: .
+    container_name: stock-crawler-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Mount thư mục dữ liệu đã chuẩn hóa ra ngoài máy chủ vật lý để lưu trữ bền vững
+      - ./data:/app/data
+      # Mount thư mục logs ra ngoài để dễ dàng theo dõi tiến trình của container
+      - ./logs:/app/logs
+      # Mount file key kết nối an toàn với Google Cloud BigQuery
+      - ./credentials.json:/app/credentials.json
+    environment:
+      - TZ=Asia/Ho_Chi_Minh

@@ -60,7 +60,10 @@ class BigQueryWriter:
             logger.error("BigQuery client is not initialized. Cannot save data.")
             return
 
-        if not data:
+        if isinstance(data, pd.DataFrame):
+            if data.empty:
+                return
+        elif not data:
             return
 
         table_id = f"{self.client.project}.{self.dataset_id}.{table_name}"
