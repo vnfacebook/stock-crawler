@@ -9,3 +9,4 @@ SQLAlchemy
 google-cloud-bigquery
 pandas-gbq
 apscheduler
+vnstock==4.0.4
