@@ -293,37 +293,76 @@ LOG_FILE=logs/crawler.log
 
 ---
 
-## Hướng dẫn vận hành bằng Docker (Docker Deployment Guide)
+## Hướng dẫn vận hành và Triển khai Cloud GCP VM (Docker & Cloud GCP Deployment Guide)
 
-Dự án đã được cấu hình Docker và Docker Compose đầy đủ, giúp vận hành ứng dụng (trình Scheduler chạy ngầm) cực kỳ ổn định mà không cần lo lắng về cài đặt Python hay môi trường ảo trên server.
+Hệ thống đã được cấu hình Docker và Docker Compose đầy đủ, đồng thời được triển khai chính thức trên nền tảng đám mây **Google Cloud Platform (GCP)** giúp trình Scheduler chạy ngầm 24/7 cực kỳ ổn định mà không cần phụ thuộc vào máy tính cá nhân.
 
-### 1. Chuẩn bị trước khi chạy
-Đảm bảo bạn đã chuẩn bị đầy đủ các file sau ở thư mục gốc trên host (các file này sẽ được mount tự động vào container):
-- File cấu hình [.env](file:///C:/Users/Admin/stock-crawler/.env) (chứa cấu hình BigQuery, Project ID, Dataset ID, v.v.).
-- File key tài khoản dịch vụ [credentials.json](file:///C:/Users/Admin/stock-crawler/credentials.json).
+### 1. Thông tin máy chủ ảo GCP VM (Always Free Tier)
+* **Loại máy chủ (Machine Type):** `e2-micro` (2 vCPU, 1 GB RAM) - Thuộc chương trình Always Free (Miễn phí trọn đời).
+* **Vùng địa lý (Region & Zone):** `us-central1` (Iowa, Hoa Kỳ).
+* **Ổ đĩa khởi động (Boot Disk):** `30 GB Standard Persistent Disk` (Hệ điều hành **Ubuntu 22.04 LTS**).
+* **External IP:** `35.255.141.175` (Địa chỉ IP động Ephemeral để tránh phát sinh chi phí).
+* **Tài khoản SSH:** `an0965587106_ecom_ftu`
+* **Đường dẫn thư mục dự án trên Server:** `/home/an0965587106_ecom_ftu/stock-crawler/`
 
-### 2. Các lệnh quản lý Docker Compose
+### 2. Quản lý Credentials và Môi trường Bảo mật
+Các file cấu hình nhạy cảm chứa thông tin tài khoản được quản lý nghiêm ngặt ngoài Git và được lưu trữ trực tiếp trên Server:
+* **Tệp cấu hình môi trường (.env):** Chứa Project ID, Dataset ID, v.v. của Google BigQuery.
+* **Tệp xác thực dịch vụ (credentials.json):** Chứa khóa bảo mật kết nối Google BigQuery Client.
+* *Quy trình tải lên:* Sử dụng công cụ **Secure File Upload** tích hợp trên trình duyệt SSH của Google Cloud để tải trực tiếp lên thư mục gốc `/home/an0965587106_ecom_ftu/`, sau đó di chuyển an toàn vào dự án bằng lệnh:
+  ```bash
+  mv ~/.env ~/credentials.json ~/stock-crawler/
+  ```
 
-* **Khởi dựng và chạy container ở chế độ nền (Detached mode):**
+### 3. Sửa lỗi thiếu Thư viện trong Docker Container
+* **Vấn đề:** Ban đầu, container bị dừng liên tục do thiếu thư viện `vnstock` (`ModuleNotFoundError`).
+* **Giải pháp:** Bổ sung chính thức `vnstock==4.0.4` vào tệp [requirements.txt](file:///c:/Users/Admin/stock-crawler/requirements.txt), giúp Container tự động tải xuống và chạy ổn định lâu dài.
+
+### 4. Các lệnh quản lý Docker Compose trên Server
+Để quản lý ứng dụng chạy ngầm trên GCP VM, kết nối SSH vào máy chủ và di chuyển vào thư mục dự án `cd ~/stock-crawler`, sau đó sử dụng các lệnh:
+
+* **Xây dựng lại Image và Khởi chạy Container chạy nền (Detached mode):**
   ```bash
   docker compose up -d --build
   ```
-  *(Lệnh này sẽ tự động xây dựng Image dựa trên Python 3.11-slim ổn định, cài đặt dependencies và kích hoạt container)*
+  *(Tự động cài đặt các thư viện mới từ `requirements.txt` và nạp cấu hình `.env` mới nhất)*
 
-* **Xem logs hoạt động của crawler trong container:**
+* **Xem logs hoạt động của trình Scheduler trong thời gian thực:**
   ```bash
   docker compose logs -f stock-crawler
   ```
+  *(Nhấp `Ctrl + C` để thoát màn hình xem log mà không làm ảnh hưởng đến tiến trình chạy ngầm)*
 
-* **Dừng hoạt động và gỡ bỏ container:**
+* **Kiểm tra trạng thái hoạt động của Container:**
+  ```bash
+  docker compose ps
+  ```
+  *(Đảm bảo cột `STATUS` hiển thị trạng thái `Up [Thời_gian]` ổn định)*
+
+* **Dừng hoạt động và gỡ bỏ Container:**
   ```bash
   docker compose down
   ```
 
-### 3. Cơ chế bảo toàn dữ liệu (Data Persistence)
-Container đã được thiết lập gắn kết các phân vùng ổ đĩa (Volumes) từ container ra ngoài máy host:
-- Dữ liệu CSV thu thập được sẽ tự động đồng bộ ra thư mục cục bộ `./data` trên máy host.
-- Nhật ký hoạt động chi tiết đồng bộ ra `./logs` trên máy host.
+### 5. Quy trình Đồng bộ hóa và Cập nhật Mã nguồn (Sync Workflow)
+Mỗi khi có thay đổi logic trên máy tính cá nhân (ví dụ: phát triển Phase 3):
+1. **Tại máy cá nhân (Local PC):** Thực hiện commit các thay đổi và push lên kho lưu trữ GitHub:
+   ```powershell
+   git add .
+   git commit -m "feat: chuẩn bị sẵn sàng cho Phase 3"
+   git push origin main
+   ```
+2. **Tại máy chủ ảo (GCP VM):** Kết nối SSH và chạy lệnh pull mã nguồn mới nhất:
+   ```bash
+   cd ~/stock-crawler
+   git pull origin main
+   docker compose up -d --build
+   ```
+
+### 6. Cơ chế bảo toàn dữ liệu (Data Persistence)
+Container Docker sử dụng phân vùng ổ đĩa gắn kết (Volumes) để đảm bảo dữ liệu không bị mất khi container restart hoặc build lại:
+* Dữ liệu CSV thu thập cục bộ đồng bộ trực tiếp ra thư mục `./data/` trên máy host.
+* Nhật ký hoạt động chi tiết đồng bộ ra thư mục `./logs/` trên máy host.
 
 ---
 
@@ -334,10 +373,10 @@ Container đã được thiết lập gắn kết các phân vùng ổ đĩa (Vo
 - [x] Viết unit tests cho các module storage (`pytest` + `pytest-asyncio` đạt 100% Passed).
 
 
-### Phase 3 — Production
+### Phase 3 — Production (Chuẩn bị sẵn sàng triển khai)
 - [x] **Automation:** Đã triển khai `APScheduler` với kịch bản chạy lúc 15:30 (Thứ 2 - Thứ 6) và tự động kéo bù (Backfill) ngày mất dữ liệu.
-- [x] **Deployment:** Đóng gói ứng dụng bằng **Docker** để chạy ổn định trên Server/Cloud.
-- [ ] **Monitoring:** Dashboard đơn giản và Alerting qua Telegram khi crawl thất bại.
+- [x] **Deployment:** Đóng gói ứng dụng bằng **Docker** và triển khai thành công 24/7 trên Cloud GCP VM (`e2-micro` miễn phí trọn đời).
+- [ ] **Monitoring & Alerting:** Xây dựng Dashboard theo dõi trạng thái Streamlit cục bộ/cloud và công cụ cảnh báo tức thì qua Telegram khi xảy ra lỗi thu thập.
 
 
 ---
